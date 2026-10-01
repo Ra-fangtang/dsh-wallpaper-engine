@@ -14,6 +14,9 @@
 
   var BASE = '/dsh-we-wallpaper'
   var POLL_MS = 4000
+  // 前端脚本是宿主按 mtime 热读取的，宿主侧却要重启才换新 —— 版本号用来在面板里
+  // 明确指出「前端已是新版、宿主还是旧的，请重启 DSH」。
+  var CLIENT_VERSION = '0.4.0'
 
   var server = null          // /state 返回的整包
   var cfg = null             // 配置副本
@@ -596,7 +599,16 @@
     try {
       for (var i = 0; i < syncers.length; i++) { try { syncers[i]() } catch (e) {} }
       if (window.__DSH_WE_SKIN_SYNC__) { try { window.__DSH_WE_SKIN_SYNC__() } catch (e) {} }
+      if (window.__DSH_WE_REC_SYNC__) { try { window.__DSH_WE_REC_SYNC__() } catch (e) {} }
       if (window.__DSH_WE_FIT_SYNC__) { try { window.__DSH_WE_FIT_SYNC__() } catch (e) {} }
+      var vnote = panelEl && panelEl.querySelector('[data-we="version"]')
+      if (vnote) {
+        var host = (server && server.hostVersion) || '?'
+        var txt = host === CLIENT_VERSION
+          ? ''
+          : '前端 ' + CLIENT_VERSION + ' · 宿主 ' + host + '（宿主侧已是旧版：新功能要完全重启 DSH 才生效）'
+        if (vnote.textContent !== txt) vnote.textContent = txt
+      }
       renderStatus()
     } finally { syncing = false }
   }
@@ -965,6 +977,168 @@
     sec3.appendChild(rPanel.root)
     panelEl.appendChild(sec3)
 
+    // ---- 在 WE 里录成视频（复杂场景的终极手段）----------------------------
+    var secRec = el('div', 'margin:10px 0 0;padding-top:10px;border-top:1px solid rgb(255 255 255 / 10%)')
+    secRec.appendChild(el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11.5px;margin-bottom:2px', '复杂壁纸：在 WE 里录成视频'))
+    var recStatus = el('div', 'font-size:11px;color:var(--dsw-alias-label-secondary,#a9aeb6);word-break:break-all')
+    recStatus.setAttribute('data-we', 'rec')
+    secRec.appendChild(recStatus)
+
+    var rSource = row('场景画面来源')
+    var selSource = ce('select')
+    ;[['pkg', '从 pkg 解画面'], ['video', '用我录的视频']].forEach(function (o) {
+      var op = ce('option'); op.value = o[0]; op.textContent = o[1]; selSource.appendChild(op)
+    })
+    selSource.style.cssText = 'max-width:150px;flex:0 0 auto;background:rgb(255 255 255 / 8%);color:inherit;border:1px solid rgb(255 255 255 / 14%);border-radius:8px;padding:4px 6px;font:inherit;font-size:12px'
+    selSource.addEventListener('change', function () {
+      cfg.sceneSource = selSource.value
+      pushConfig({ sceneSource: selSource.value }, true)
+      fetchState()
+      refreshRecordings(false)
+    })
+    syncers.push(function () { selSource.value = (cfg && cfg.sceneSource) || 'pkg' })
+    rSource.ctl.appendChild(selSource)
+    secRec.appendChild(rSource.root)
+
+    var rSize = row('录制尺寸')
+    var inpW = ce('input'); inpW.type = 'number'; inpW.min = '320'; inpW.max = '7680'; inpW.step = '2'
+    var inpH = ce('input'); inpH.type = 'number'; inpH.min = '240'; inpH.max = '4320'; inpH.step = '2'
+    var sizeCss = 'width:64px;background:rgb(255 255 255 / 8%);color:inherit;border:1px solid rgb(255 255 255 / 14%);border-radius:8px;padding:4px 6px;font:inherit;font-size:12px'
+    inpW.style.cssText = sizeCss; inpH.style.cssText = sizeCss
+    function pushSize() {
+      var w = Math.max(320, Math.min(7680, Number(inpW.value) || 1920))
+      var h = Math.max(240, Math.min(4320, Number(inpH.value) || 1080))
+      cfg.recordWindow = Object.assign({}, cfg.recordWindow, { width: w, height: h })
+      inpW.value = String(w); inpH.value = String(h)
+      pushConfig({ recordWindow: cfg.recordWindow }, true)
+    }
+    inpW.addEventListener('change', pushSize)
+    inpH.addEventListener('change', pushSize)
+    syncers.push(function () {
+      var rw = (cfg && cfg.recordWindow) || { width: 1920, height: 1080 }
+      if (document.activeElement !== inpW) inpW.value = String(rw.width || 1920)
+      if (document.activeElement !== inpH) inpH.value = String(rw.height || 1080)
+    })
+    var sizeWrap = el('div', 'display:flex;align-items:center;gap:4px;flex:1 1 auto;justify-content:flex-end')
+    sizeWrap.appendChild(inpW)
+    sizeWrap.appendChild(el('span', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:12px', '×'))
+    sizeWrap.appendChild(inpH)
+    var btnFit = el('button', '', '用屏幕')
+    btnFit.title = '取当前屏幕分辨率'
+    btnFit.addEventListener('click', function () {
+      inpW.value = String(window.screen.width)
+      inpH.value = String(window.screen.height)
+      pushSize()
+    })
+    sizeWrap.appendChild(btnFit)
+    rSize.ctl.appendChild(sizeWrap)
+    secRec.appendChild(rSize.root)
+
+    var rWin = row('录制窗口')
+    var btnOpen = el('button', '', '▶ 让 WE 窗口播放')
+    btnOpen.title = '用 WE 的命令行把当前壁纸在窗口里播放（官方推荐做法），然后用 OBS / ScreenToGif 录这个窗口'
+    btnOpen.addEventListener('click', function () {
+      pushSize()
+      btnOpen.textContent = '正在开窗…'
+      postRecord({ action: 'open' }, function (j) {
+        btnOpen.textContent = '▶ 让 WE 窗口播放'
+        recHint.textContent = j && j.ok
+          ? ('WE 已开窗（' + j.size + '）。用 OBS / ScreenToGif 录这个窗口，录完点「↻ 刷新列表」再选中它绑定。')
+          : ('开窗失败：' + ((j && j.error) || '未知错误'))
+      })
+    })
+    var btnClose = el('button', '', '■ 关闭窗口')
+    btnClose.addEventListener('click', function () { postRecord({ action: 'close' }, function () { refreshRecordings(false) }) })
+    var winWrap = el('div', 'display:flex;align-items:center;gap:6px;flex:1 1 auto;justify-content:flex-end')
+    winWrap.appendChild(btnOpen); winWrap.appendChild(btnClose)
+    rWin.ctl.appendChild(winWrap)
+    secRec.appendChild(rWin.root)
+
+    var recHint = el('div', 'font-size:11px;color:var(--dsw-alias-label-secondary,#a9aeb6);word-break:break-all;margin-top:2px',
+      'Wallpaper Engine 本身没有导出视频的功能（官方说明：壁纸像"游戏关卡"，导不出）。' +
+      '这里的做法就是官方推荐的那条：让壁纸在窗口里播放 → 用录屏工具录 → 把文件绑到这张壁纸。')
+    secRec.appendChild(recHint)
+
+    var rFile = row('录像文件')
+    var selFile = ce('select')
+    selFile.style.cssText = 'max-width:170px;min-width:0;flex:1 1 auto;background:rgb(255 255 255 / 8%);color:inherit;border:1px solid rgb(255 255 255 / 14%);border-radius:8px;padding:4px 6px;font:inherit;font-size:11.5px'
+    rFile.ctl.appendChild(selFile)
+    secRec.appendChild(rFile.root)
+
+    var rBind = row('绑定 / 管理')
+    var btnRefresh = el('button', '', '↻ 刷新列表')
+    btnRefresh.addEventListener('click', function () { refreshRecordings(true) })
+    var btnLink = el('button', '', '✓ 绑到当前壁纸')
+    btnLink.addEventListener('click', function () {
+      if (!selFile.value) { recHint.textContent = '先在上面选一个录像文件（或把「录像目录」设成你放录像的地方）'; return }
+      postRecord({ action: 'link', file: selFile.value }, function (j) {
+        recHint.textContent = j && j.ok
+          ? ('已绑定：' + j.file + '（' + (Math.round(j.bytes / 1048576 * 10) / 10) + ' MB）')
+          : ('绑定失败：' + ((j && j.error) || '未知'))
+        fetchState()
+      })
+    })
+    var btnUnlink = el('button', '', '✕ 解绑')
+    btnUnlink.addEventListener('click', function () {
+      postRecord({ action: 'unlink' }, function () { fetchState(); refreshRecordings(false) })
+    })
+    var bindWrap = el('div', 'display:flex;align-items:center;gap:6px;flex:1 1 auto;justify-content:flex-end')
+    bindWrap.appendChild(btnRefresh); bindWrap.appendChild(btnLink); bindWrap.appendChild(btnUnlink)
+    rBind.ctl.appendChild(bindWrap)
+    secRec.appendChild(rBind.root)
+
+    var rDir = row('录像目录')
+    var inpRecDir = ce('input')
+    inpRecDir.type = 'text'
+    inpRecDir.placeholder = '留空=自动（视频文件夹 / 桌面）'
+    inpRecDir.style.cssText = 'flex:1 1 auto;min-width:0;background:rgb(255 255 255 / 8%);color:inherit;border:1px solid rgb(255 255 255 / 14%);border-radius:8px;padding:4px 6px;font:inherit;font-size:11.5px'
+    inpRecDir.addEventListener('change', function () {
+      pushConfig({ videoDir: inpRecDir.value.trim() || null }, true)
+      refreshRecordings(true)
+    })
+    syncers.push(function () { if (document.activeElement !== inpRecDir) inpRecDir.value = (cfg && cfg.videoDir) || '' })
+    rDir.ctl.appendChild(inpRecDir)
+    secRec.appendChild(rDir.root)
+    panelEl.appendChild(secRec)
+
+    function postRecord(payload, done) {
+      fetch(BASE + '/record', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(function (r) { return r.json() })
+        .then(function (j) { try { if (done) done(j) } catch (e) {} })
+        .catch(function (e) { try { if (done) done({ ok: false, error: String((e && e.message) || e) }) } catch (e2) {} })
+    }
+
+    function refreshRecordings(showHint) {
+      postRecord({ action: 'list' }, function (j) {
+        if (!j || !j.ok) { if (showHint) recHint.textContent = '取录像列表失败：' + ((j && j.error) || '未知'); return }
+        var files = j.files || []
+        var keep = selFile.value
+        selFile.textContent = ''
+        for (var i = 0; i < files.length; i++) {
+          var op = ce('option')
+          op.value = files[i].path
+          op.textContent = files[i].name + '  ' + (Math.round(files[i].bytes / 1048576 * 10) / 10) + 'MB'
+          selFile.appendChild(op)
+        }
+        if (keep) selFile.value = keep
+        if (showHint) recHint.textContent = '在 ' + (((j.dirs || []).join(' / ')) || '（没有可用目录）') + ' 里找到 ' + files.length + ' 个视频文件'
+      })
+    }
+
+    window.__DSH_WE_REC_SYNC__ = function () {
+      try {
+        var sc = server && server.scene
+        var rec = sc && sc.recording
+        var text
+        if (rec) text = '当前壁纸已绑定录像：' + String(rec.path).split('\\').pop() + '（' + rec.mb + ' MB）'
+        else if (cfg && cfg.sceneSource === 'video') text = '「用我录的视频」模式：当前壁纸还没绑定录像，暂时用预览图'
+        else text = '「从 pkg 解画面」模式' + (sc && sc.ok === false && sc.reason ? '（' + sc.reason + '）' : '')
+        if (recStatus.textContent !== text) recStatus.textContent = text
+      } catch (e) {}
+    }
+    refreshRecordings(false)
+    window.__DSH_WE_REC_SYNC__()
+
     // ---- 皮肤兼容（dsh-claude-style 等）------------------------------------
     var secSkin = el('div', 'margin:10px 0 0;padding-top:10px;border-top:1px solid rgb(255 255 255 / 10%)')
     secSkin.appendChild(el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11.5px;margin-bottom:2px', '皮肤兼容（Claude Code 风格等）'))
@@ -1107,6 +1281,10 @@
     diagBox.setAttribute('data-we', 'diag')
     diagBox.readOnly = true
     panelEl.appendChild(diagBox)
+
+    var vnote = el('div', 'color:#f0b45a;font-size:11px;margin-top:6px;word-break:break-all')
+    vnote.setAttribute('data-we', 'version')
+    panelEl.appendChild(vnote)
 
     document.body.appendChild(panelEl)
     renderStatus()

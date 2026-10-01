@@ -24,7 +24,10 @@
   var compatAt = 0
   var layerEl = null
   var mediaEl = null
+  var backdropEl = null      // 铺满屏幕的模糊背景（同一张图，见 mediaFor）
+  var backdropUrl = ''
   var mediaKind = ''
+  var mediaInfo = { url: '', kind: '', w: 0, h: 0, preview: false }  // 当前媒体的原始分辨率与来源
   var dimEl = null
   var btnEl = null
   var panelEl = null
@@ -53,26 +56,40 @@
     document.body.appendChild(layerEl)
   }
 
+  // 壁纸元素：一个前台（原图，按 fillMode 定对象框）+ 一个背景（同一张图放大模糊填满屏幕）。
+  // 「背景」是给正方形缩略图准备的：它只负责铺满屏幕、顺便把主图的平均色带到边缘，
+  // 主图因此可以用 contain 完整显示而不被裁掉。
+  function makeMediaEl(kind, id) {
+    var el
+    if (kind === 'video') {
+      el = ce('video')
+      el.autoplay = true
+      el.loop = true
+      el.muted = true
+      el.playsInline = true
+      el.setAttribute('playsinline', '')
+      el.setAttribute('disablepictureinpicture', '')
+    } else {
+      el = ce('img')
+      el.alt = ''
+      el.draggable = false
+    }
+    el.id = id
+    return el
+  }
+
   function mediaFor(kind) {
     if (mediaEl && mediaKind === kind && mediaEl.isConnected) return mediaEl
     if (mediaEl && mediaEl.parentNode) mediaEl.parentNode.removeChild(mediaEl)
-    if (kind === 'video') {
-      mediaEl = ce('video')
-      mediaEl.autoplay = true
-      mediaEl.loop = true
-      mediaEl.muted = true
-      mediaEl.playsInline = true
-      mediaEl.setAttribute('playsinline', '')
-      mediaEl.setAttribute('disablepictureinpicture', '')
-    } else {
-      mediaEl = ce('img')
-      mediaEl.alt = ''
-      mediaEl.draggable = false
-    }
-    mediaEl.id = 'dsh-we-media'
+    if (backdropEl && backdropEl.parentNode) backdropEl.parentNode.removeChild(backdropEl)
+    mediaEl = makeMediaEl(kind, 'dsh-we-media')
+    backdropEl = makeMediaEl(kind, 'dsh-we-backdrop')
+    backdropEl.setAttribute('aria-hidden', 'true')
     mediaKind = kind
+    layerEl.insertBefore(backdropEl, dimEl)
     layerEl.insertBefore(mediaEl, dimEl)
     effUrl = ''
+    backdropUrl = ''
     return mediaEl
   }
 
@@ -123,7 +140,10 @@
   function buildCss() {
     var css = ''
     css += '#dsh-we-layer{position:fixed;left:0;top:0;right:0;bottom:0;z-index:0;pointer-events:none;overflow:hidden;background:transparent}'
-    css += '#dsh-we-layer>video,#dsh-we-layer>img{position:absolute;left:0;top:0;width:100%;height:100%;display:block;object-fit:cover;object-position:center;transform-origin:center;transition:opacity .4s ease}'
+    // 前台媒体：object-fit / object-position 由 applyMedia 按「填充方式」写死
+    css += '#dsh-we-media{position:absolute;left:0;top:0;width:100%;height:100%;display:block;object-position:center;transition:opacity .4s ease}'
+    // 背景媒体：同一张图，铺满 + 放大 + 模糊。只在「模糊填满」模式显示，负责让整屏没有空带。
+    css += '#dsh-we-backdrop{position:absolute;left:0;top:0;width:100%;height:100%;display:block;object-fit:cover;object-position:center;transform:scale(1.22);filter:blur(46px) saturate(1.15) brightness(.86)}'
     css += '#dsh-we-dim{position:absolute;left:0;top:0;right:0;bottom:0;background:#000;opacity:0;pointer-events:none}'
     css += '#dsh-we-btn{position:fixed;z-index:2147483000;box-sizing:border-box;width:36px;height:36px;padding:0;border-radius:12px;border:1px solid rgb(255 255 255 / 16%);background:rgb(30 31 38 / 82%);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:var(--dsw-alias-label-primary,#e8eaed);font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:grab;box-shadow:0 6px 20px rgb(0 0 0 / 38%);user-select:none;touch-action:none;transition:filter .15s ease,transform .15s ease}'
     css += '#dsh-we-btn:hover{filter:brightness(1.18)}'
@@ -390,10 +410,23 @@
       effUrl = url
       setMediaSrc(el, url, eff.kind)
     }
+    // 背景层用同一张图；它只为「铺满」服务，视频用同一路 src 会再解一份，
+    // 太贵，所以只给图片配背景层。
+    var wantBackdrop = effectiveFit() === 'fill' && eff.kind === 'image'
+    if (wantBackdrop && backdropEl) {
+      if (backdropUrl !== url) { backdropUrl = url; setMediaSrc(backdropEl, url, eff.kind) }
+      backdropEl.style.display = ''
+      backdropEl.style.opacity = String(cfg.opacity)
+    } else if (backdropEl) {
+      backdropEl.style.display = 'none'
+    }
     el.style.opacity = String(cfg.opacity)
     el.style.filter = cfg.blur > 0 ? 'blur(' + px(cfg.blur) + ')' : 'none'
     el.style.transform = cfg.blur > 0 ? 'scale(' + String(1 + cfg.blur / 120) + ')' : 'none'
-    el.style.objectFit = cfg.fit || 'cover'
+    // 「模糊填满」：前台只负责把整张图完整放进来（contain），裁切与铺满交给背景层 ——
+    // 正方形缩略图因此既不会被裁掉两侧，也不会被拉成 16:9。
+    var fit = effectiveFit()
+    el.style.objectFit = fit === 'fill' ? 'contain' : (fit === 'stretch' ? 'fill' : fit)
     if (dimEl) dimEl.style.opacity = String(cfg.dim)
     if (eff.kind === 'video') {
       el.muted = !!cfg.muted
@@ -422,12 +455,35 @@
       })
       .catch(function (e) { log('blob 回退失败', e) })
   }
+  // 记下当前媒体的原始分辨率与来源（原图 / 预览图 / 回退预览），面板据此给出画质提示。
+  function measureMedia() {
+    var el = mediaEl
+    var eff = server && server.effective
+    if (!el || !eff) return
+    var w = 0
+    var h = 0
+    if (eff.kind === 'video') { w = el.videoWidth || 0; h = el.videoHeight || 0 }
+    else { w = el.naturalWidth || 0; h = el.naturalHeight || 0 }
+    if (!w || !h) return
+    var changed = mediaInfo.url !== eff.mediaUrl || mediaInfo.w !== w || mediaInfo.h !== h
+    mediaInfo = { url: eff.mediaUrl, kind: eff.kind, w: w, h: h, preview: !!eff.fallback }
+    if (changed) { try { if (panelEl) renderStatus() } catch (e) {} }
+  }
+
   function setMediaSrc(el, url, kind) {
     if (mediaFallback.timer) { clearTimeout(mediaFallback.timer); mediaFallback.timer = null }
     if (mediaFallback.blobUrl) { try { URL.revokeObjectURL(mediaFallback.blobUrl) } catch (e) {} mediaFallback.blobUrl = '' }
     mediaFallback.used = false
     el.src = url
     if (kind === 'video') { try { el.load(); var pr = el.play(); if (pr && pr.catch) pr.catch(function () {}) } catch (e) {} }
+    // 拿到真实尺寸就记下来：面板要拿它判断「这张图是不是被放大到失真」。
+    if (mediaEl === el) {
+      if (kind === 'video') el.addEventListener('loadedmetadata', measureMedia, { once: true })
+      else {
+        el.addEventListener('load', measureMedia, { once: true })
+        if (el.complete) measureMedia()
+      }
+    }
     el.addEventListener('loadeddata', function () {
       if (mediaFallback.timer) { clearTimeout(mediaFallback.timer); mediaFallback.timer = null }
     }, { once: true })
@@ -449,11 +505,12 @@
         var first = !cfg
         server = j
         var patch = j.config || {}
-        // 老宿主（非本次更新的版本）没有皮肤兼容字段：补上默认值，避免 cfg.skinCompat
-        // 取到 undefined 时把补丁整条关掉。
+        // 老宿主（非本次更新的版本）缺字段时补上默认值：皮肤兼容缺了会把补丁整条关掉，
+        // 预览图适配缺了则会让场景壁纸继续被裁 —— 两者都得有个安全默认。
         if (patch.skinCompat === undefined) patch.skinCompat = true
         if (patch.skinAlpha === undefined) patch.skinAlpha = null
         if (patch.skinFrameAlpha === undefined) patch.skinFrameAlpha = null
+        if (patch.previewFit === undefined) patch.previewFit = true
         cfg = patch
         if (first) { ensureStyle(); captureOriginals() }
         applyCss()
@@ -537,6 +594,7 @@
     try {
       for (var i = 0; i < syncers.length; i++) { try { syncers[i]() } catch (e) {} }
       if (window.__DSH_WE_SKIN_SYNC__) { try { window.__DSH_WE_SKIN_SYNC__() } catch (e) {} }
+      if (window.__DSH_WE_FIT_SYNC__) { try { window.__DSH_WE_FIT_SYNC__() } catch (e) {} }
       renderStatus()
     } finally { syncing = false }
   }
@@ -553,7 +611,7 @@
       var badge = el('span', 'display:inline-block;padding:1px 6px;border-radius:6px;background:rgb(255 255 255 / 12%);font-size:11px;margin-left:6px', eff.kind === 'video' ? '视频' : '图片')
       title.appendChild(badge)
       if (eff.followed) title.appendChild(el('span', 'display:inline-block;padding:1px 6px;border-radius:6px;background:rgb(77 107 254 / 30%);font-size:11px;margin-left:6px', '跟随 WE'))
-      if (eff.fallback) box.appendChild(el('div', 'color:#f0b45a;font-size:11.5px;margin-top:4px', '该壁纸是场景/网页类型，无法直接播放，已改用它的预览图。'))
+      if (eff.fallback) box.appendChild(el('div', 'color:#f0b45a;font-size:11.5px;margin-top:4px', '该壁纸是场景/网页类型（WE 的 .pkg 引擎格式），这里只能用它的预览图 —— 画质与构图都受预览图限制。'))
     } else if (cfg && !cfg.enabled) {
       title.textContent = '壁纸背景已关闭'
     } else if (!server || !server.we || !server.we.dir) {
@@ -574,10 +632,61 @@
         ms = 'img ' + mediaEl.naturalWidth + 'x' + mediaEl.naturalHeight + ' · ' + (mediaEl.complete ? '已加载' : '加载中')
       }
       box.appendChild(el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11px;margin-top:2px', ms))
+      // 画质体检：这张图相对屏幕被放大了多少、会不会被裁。
+      var q = qualityReport()
+      if (q) box.appendChild(el('div', q.level === 'bad' ? 'color:#f0b45a;font-size:11px;margin-top:4px' : 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11px;margin-top:4px', q.text))
     }
     if (server && server.errors && server.errors.length) {
       box.appendChild(el('div', 'color:#ff8b7a;font-size:11px;margin-top:4px;white-space:pre-wrap;word-break:break-all', server.errors.join('\n')))
     }
+  }
+
+  // 实际生效的填充方式。场景 / 网页壁纸只能退回预览图，而预览图多是 1:1 的封面缩略图
+  // （实测有 160×160、192×192、250×250、1024×1024）—— 用 cover 会被裁掉四成画面，
+  // 所以默认替它们切到「模糊填满」：整张图完整显示，四周用同一张图的模糊版铺满。
+  // 用户在面板里显式选过（或关掉 previewFit）时一律尊重用户的选择。
+  var FIT_ORDER = ['cover', 'fill', 'contain', 'stretch']
+  function effectiveFit() {
+    var want = (cfg && cfg.fit) || 'cover'
+    var eff = server && server.effective
+    if (cfg && cfg.previewFit && eff && eff.fallback && FIT_ORDER.indexOf(want) >= 0 && want === 'cover') return 'fill'
+    return want
+  }
+  function fitIsAuto() {
+    return effectiveFit() !== ((cfg && cfg.fit) || 'cover')
+  }
+
+  // 画质体检：把「媒体原始分辨率」「屏幕」「当前填充方式」三者对上，
+  // 说清楚这张图被放大了几倍、会不会被裁掉一部分。
+  function qualityReport() {
+    var info = mediaInfo
+    if (!info || !info.w || !info.h) return null
+    var vw = window.innerWidth || 1
+    var vh = window.innerHeight || 1
+    var dpr = window.devicePixelRatio || 1
+    var fit = effectiveFit()
+    var scale
+    if (fit === 'contain' || fit === 'fill') scale = Math.min(vw / info.w, vh / info.h)
+    else if (fit === 'cover') scale = Math.max(vw / info.w, vh / info.h)
+    else scale = 1
+    var eff = scale * dpr                       // 实际每个源像素被拉成多少个设备像素
+    var retained = 1
+    if (fit === 'cover') {
+      var shownW = Math.min(vw, info.w * scale)
+      var shownH = Math.min(vh, info.h * scale)
+      retained = (shownW * shownH) / (info.w * scale * info.h * scale)
+    }
+    var parts = ['源 ' + info.w + '×' + info.h]
+    if (info.preview) parts.push('预览图')
+    parts.push('显示 ' + vw + '×' + vh + (dpr !== 1 ? ' @' + (Math.round(dpr * 100) / 100) + 'x' : ''))
+    parts.push(scale >= 1 ? '放大 ' + (Math.round(eff * 100) / 100) + '×' : '缩小 ' + (Math.round(eff * 100) / 100) + '×')
+    if (fit === 'cover' && retained < 0.92) parts.push('裁掉约 ' + Math.round((1 - retained) * 100) + '% 画面')
+    var level = eff > 1.6 ? 'bad' : 'ok'
+    var text = parts.join(' · ')
+    if (level === 'bad') {
+      text += '\n画质会被拉糊。建议：填充方式改「模糊填满」（完整显示、不裁切，四周用同图模糊补满）或「完整显示」。'
+    }
+    return { level: level, text: text, scale: scale, retained: retained }
   }
 
   function buildDiag() {
@@ -762,14 +871,36 @@
     sec2.appendChild(rDim.root)
     var rFit = row('填充方式')
     var selFit = ce('select')
-    ;[['cover', '裁切铺满'], ['contain', '完整显示'], ['fill', '拉伸铺满']].forEach(function (o) {
+    ;[['cover', '裁切铺满'], ['fill', '模糊填满（不裁切）'], ['contain', '完整显示（留黑边）'], ['stretch', '拉伸铺满']].forEach(function (o) {
       var op = ce('option'); op.value = o[0]; op.textContent = o[1]; selFit.appendChild(op)
     })
     selFit.style.cssText = 'max-width:130px;flex:0 0 auto;background:rgb(255 255 255 / 8%);color:inherit;border:1px solid rgb(255 255 255 / 14%);border-radius:8px;padding:4px 6px;font:inherit;font-size:12px'
-    selFit.addEventListener('change', function () { cfg.fit = selFit.value; applyMedia(); pushConfig({ fit: selFit.value }, true) })
+    selFit.addEventListener('change', function () { cfg.fit = selFit.value; applyMedia(); pushConfig({ fit: selFit.value }, true); if (window.__DSH_WE_FIT_SYNC__) window.__DSH_WE_FIT_SYNC__() })
     syncers.push(function () { selFit.value = (cfg && cfg.fit) || 'cover' })
     rFit.ctl.appendChild(selFit)
     sec2.appendChild(rFit.root)
+
+    var rPreviewFit = row('预览图自动适配')
+    rPreviewFit.ctl.appendChild(makeCheck(function () { return !!(cfg && cfg.previewFit) }, function (v) {
+      cfg.previewFit = v
+      applyMedia()
+      pushConfig({ previewFit: v }, true)
+      if (window.__DSH_WE_FIT_SYNC__) window.__DSH_WE_FIT_SYNC__()
+    }))
+    sec2.appendChild(rPreviewFit.root)
+    var fitNote = el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11px;margin-top:2px')
+    fitNote.setAttribute('data-we', 'fitnote')
+    sec2.appendChild(fitNote)
+    window.__DSH_WE_FIT_SYNC__ = function () {
+      try {
+        var auto = fitIsAuto()
+        var eff = server && server.effective
+        var txt = ''
+        if (auto) txt = '已自动改用「模糊填满」：场景壁纸只能用预览图（常常是正方形封面），裁切会吃掉四成画面。'
+        else if (cfg && cfg.previewFit && eff && eff.fallback && cfg.fit === 'cover') txt = '（你显式选了裁切铺满，自动适配不再介入）'
+        if (fitNote.textContent !== txt) fitNote.textContent = txt
+      } catch (e) {}
+    }
     panelEl.appendChild(sec2)
 
     var sec3 = el('div', 'margin:10px 0 0;padding-top:10px;border-top:1px solid rgb(255 255 255 / 10%)')

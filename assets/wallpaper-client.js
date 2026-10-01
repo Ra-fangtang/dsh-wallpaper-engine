@@ -511,6 +511,7 @@
         if (patch.skinAlpha === undefined) patch.skinAlpha = null
         if (patch.skinFrameAlpha === undefined) patch.skinFrameAlpha = null
         if (patch.previewFit === undefined) patch.previewFit = true
+        if (patch.sceneExtract === undefined) patch.sceneExtract = true
         cfg = patch
         if (first) { ensureStyle(); captureOriginals() }
         applyCss()
@@ -611,7 +612,24 @@
       var badge = el('span', 'display:inline-block;padding:1px 6px;border-radius:6px;background:rgb(255 255 255 / 12%);font-size:11px;margin-left:6px', eff.kind === 'video' ? '视频' : '图片')
       title.appendChild(badge)
       if (eff.followed) title.appendChild(el('span', 'display:inline-block;padding:1px 6px;border-radius:6px;background:rgb(77 107 254 / 30%);font-size:11px;margin-left:6px', '跟随 WE'))
-      if (eff.fallback) box.appendChild(el('div', 'color:#f0b45a;font-size:11.5px;margin-top:4px', '该壁纸是场景/网页类型（WE 的 .pkg 引擎格式），这里只能用它的预览图 —— 画质与构图都受预览图限制。'))
+      if (eff.source === 'pkg') {
+        title.appendChild(el('span', 'display:inline-block;padding:1px 6px;border-radius:6px;background:rgb(77 107 254 / 30%);font-size:11px;margin-left:6px', 'pkg 实画面'))
+      }
+      if (eff.source === 'pkg' && server.scene && server.scene.ok) {
+        var sc = server.scene
+        box.appendChild(el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11px;margin-top:4px',
+          '画面取自 scene.pkg：' + sc.entry + ' · ' + sc.size + ' · ' + sc.format +
+          (sc.decompressed ? ' · LZ4 解压' : '') + '（共 ' + sc.candidates + ' 个候选）'))
+      }
+      if (eff.source === 'pkg' && server.scene && !server.scene.ok) {
+        box.appendChild(el('div', 'color:#f0b45a;font-size:11.5px;margin-top:4px', 'scene.pkg 提取不可用（' + server.scene.reason + '），已退回预览图。'))
+      }
+      if (eff.fallback) {
+        var hint = (server.scene && server.scene.ok === false && server.scene.reason && server.scene.reason !== '尚未提取')
+          ? '该壁纸是场景/网页类型（WE 的 .pkg 引擎格式），pkg 里的画面这次没能取出来（' + server.scene.reason + '），只能用它的预览图。'
+          : '该壁纸是场景/网页类型（WE 的 .pkg 引擎格式），这里只能用它的预览图 —— 画质与构图都受预览图限制。'
+        box.appendChild(el('div', 'color:#f0b45a;font-size:11.5px;margin-top:4px', hint))
+      }
     } else if (cfg && !cfg.enabled) {
       title.textContent = '壁纸背景已关闭'
     } else if (!server || !server.we || !server.we.dir) {
@@ -678,6 +696,7 @@
     }
     var parts = ['源 ' + info.w + '×' + info.h]
     if (info.preview) parts.push('预览图')
+    else if (server && server.effective && server.effective.source === 'pkg') parts.push('scene.pkg 实画面')
     parts.push('显示 ' + vw + '×' + vh + (dpr !== 1 ? ' @' + (Math.round(dpr * 100) / 100) + 'x' : ''))
     parts.push(scale >= 1 ? '放大 ' + (Math.round(eff * 100) / 100) + '×' : '缩小 ' + (Math.round(eff * 100) / 100) + '×')
     if (fit === 'cover' && retained < 0.92) parts.push('裁掉约 ' + Math.round((1 - retained) * 100) + '% 画面')
@@ -888,6 +907,17 @@
       if (window.__DSH_WE_FIT_SYNC__) window.__DSH_WE_FIT_SYNC__()
     }))
     sec2.appendChild(rPreviewFit.root)
+
+    var rSceneExtract = row('场景读 pkg 实画面')
+    rSceneExtract.ctl.appendChild(makeCheck(function () { return cfg ? cfg.sceneExtract !== false : true }, function (v) {
+      cfg.sceneExtract = v
+      pushConfig({ sceneExtract: v }, true)
+      fetchState()
+    }))
+    sec2.appendChild(rSceneExtract.root)
+    var sceneNote = el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11px;margin-top:2px',
+      '从 scene.pkg 里解出真实画面（内嵌图/视频、DXT、裸像素），拿不到才退回封面缩略图。')
+    sec2.appendChild(sceneNote)
     var fitNote = el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11px;margin-top:2px')
     fitNote.setAttribute('data-we', 'fitnote')
     sec2.appendChild(fitNote)

@@ -40,7 +40,7 @@ for (const rel of [...pkg.files, 'package.json']) {
 // 2. 前端脚本与宿主模块的语法
 // ---------------------------------------------------------------------------
 console.log('语法')
-for (const rel of ['lib/index.js', 'assets/wallpaper-client.js']) {
+for (const rel of ['lib/index.js', 'lib/scene-pkg.js', 'assets/wallpaper-client.js']) {
   try {
     execFileSync(process.execPath, ['--check', path.join(ROOT, rel)], { stdio: 'pipe' })
     ok(rel)
@@ -103,7 +103,7 @@ const PRIVATE = [
   [/@users\.noreply\.github\.com/, null], // 允许（提交身份）
   [/[A-Za-z]:\\Users\\[^\\\s]+\.ssh/i, 'ssh 路径'],
 ]
-for (const rel of ['README.md', 'lib/index.js', 'assets/wallpaper-client.js']) {
+for (const rel of ['README.md', 'lib/index.js', 'lib/scene-pkg.js', 'assets/wallpaper-client.js']) {
   const text = read(rel)
   let hit = false
   for (const [re, label] of PRIVATE) {

@@ -1,7 +1,7 @@
 {
   "name": "dsh-wallpaper-engine",
-  "version": "0.2.0",
-  "description": "把 Wallpaper Engine 的壁纸接进 DSH 界面背景：跟随 WE 当前壁纸、可挑选已安装壁纸、透明度/模糊/暗化可调，并与 dsh-claude-style 等整页换肤插件兼容",
+  "version": "0.3.0",
+  "description": "把 Wallpaper Engine 的壁纸接进 DSH 界面背景：跟随 WE 当前壁纸、可挑选已安装壁纸、透明度/模糊/暗化可调；场景（.pkg）壁纸会从中解出真实画面，并与 dsh-claude-style 等整页换肤插件兼容",
   "keywords": [
     "dsh",
     "dsh-plugin",

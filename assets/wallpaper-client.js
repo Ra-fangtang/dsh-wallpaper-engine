@@ -512,6 +512,7 @@
         if (patch.skinFrameAlpha === undefined) patch.skinFrameAlpha = null
         if (patch.previewFit === undefined) patch.previewFit = true
         if (patch.sceneExtract === undefined) patch.sceneExtract = true
+        if (!Array.isArray(patch.scenePreviewIds)) patch.scenePreviewIds = []
         cfg = patch
         if (first) { ensureStyle(); captureOriginals() }
         applyCss()
@@ -915,8 +916,29 @@
       fetchState()
     }))
     sec2.appendChild(rSceneExtract.root)
+
+    // 多层拼接 + 逐层视差跟随鼠标的场景，取任何单层都不等于合成画面；作者给的预览图
+    // 反而常是对的合成结果。这个开关把「当前这张」加进/移出 scenePreviewIds。
+    var sceneIds = function () {
+      if (!cfg) return []
+      if (!Array.isArray(cfg.scenePreviewIds)) cfg.scenePreviewIds = []
+      return cfg.scenePreviewIds
+    }
+    var curId = function () { return (server && server.effective && server.effective.id) || null }
+    var rUsePreview = row('用预览图（当前这张）')
+    rUsePreview.ctl.appendChild(makeCheck(function () { return !!curId() && sceneIds().indexOf(curId()) >= 0 }, function (v) {
+      var id = curId()
+      if (!id) return
+      var list = sceneIds()
+      var at = list.indexOf(id)
+      if (v && at < 0) list.push(id)
+      else if (!v && at >= 0) list.splice(at, 1)
+      pushConfig({ scenePreviewIds: list }, true)
+      fetchState()
+    }))
+    sec2.appendChild(rUsePreview.root)
     var sceneNote = el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11px;margin-top:2px',
-      '从 scene.pkg 里解出真实画面（内嵌图/视频、DXT、裸像素），拿不到才退回封面缩略图。')
+      '默认从 scene.pkg 解真实画面。多层拼接、逐层跟随鼠标的场景取单层会不对，勾上面这项改用作者的预览图。')
     sec2.appendChild(sceneNote)
     var fitNote = el('div', 'color:var(--dsw-alias-label-secondary,#a9aeb6);font-size:11px;margin-top:2px')
     fitNote.setAttribute('data-we', 'fitnote')

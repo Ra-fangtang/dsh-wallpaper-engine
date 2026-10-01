@@ -1,0 +1,43 @@
+# 更新日志
+
+本文件记录每个发行版的内容。版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)：
+`主版本.次版本.修订号`，git 标签写作 `v<版本>`。
+
+## [0.2.0] - 2026-10-01
+
+第一个公开版本，含与整页换肤插件的兼容层。
+
+### 新增
+
+- **皮肤兼容层**：与 `dsh-claude-style` 这类把实色画布直接画在内容列 / 侧栏 / 窗口外框上的
+  换肤插件共存时，自动注入补丁 CSS 把这些画布按同一比例调淡，壁纸不再被整块盖住。
+  - 接管六处：`#root`、对话列、侧栏、窗口外框（含 Windows 标题栏条）、`html`/`body`、
+    以及皮肤自己的画布 token `--dsh-claude-canvas` / `--dsh-claude-sidebar-canvas`。
+  - 用属性选择器加倍把特异性提到 (0,7,1)~(0,9,1)（皮肤是 (0,3,1)~(0,5,1) 且带 `!important`），
+    并把补丁样式表保持在 `<head>` 末尾；只盯 `<head>` 直接子节点的 MutationObserver 负责重算。
+  - 限域属性 `html[data-dsh-we-compat]` / `body[data-dsh-we-compat]`：皮肤关掉、壁纸关掉或
+    画布保留拉到 100% 时，补丁连同属性一起撤掉。
+- 面板新增「皮肤兼容（Claude Code 风格等）」：透出壁纸开关、皮肤画布保留、窗口外框保留、
+  ↻ 重新应用；状态行显示检测到的皮肤与生效比例。
+- 「诊断」输出增加六处画布的计算背景色、补丁样式表大小与写入时间。
+- 宿主配置项 `skinCompat` / `skinAlpha` / `skinFrameAlpha`（前端带缺省回退，老宿主也能跑）。
+
+### 变更
+
+- 版本号从 `0.1.x` 提到 `0.2.0`（新增功能 + 新增配置项）。
+- 包元数据补齐：`repository` / `homepage` / `bugs` / `author` / `keywords` / `dsh.engines`，
+  并移除 `private`，使它可以作为公开组合包安装。
+- **刻意不声明 `prepare` 脚本、不声明任何依赖**：从 git spec 安装时 pnpm 会拦构建脚本要求授权，
+  而本插件没有构建步骤，授权与否都能跑。
+- 新增 `scripts/verify.mjs`（`npm run verify` / `release:check` / `release`）作为发版自检。
+
+### 修复
+
+- 修复启用 `dsh-claude-style` 后壁纸被整页盖住的问题（即本版本新增的兼容层）。
+
+## 0.1.0 - 未公开
+
+- 初版：跟随 WE 当前壁纸 / 手动挑选、不透明度、模糊、暗化、填充方式、
+  界面底材与面板层透明度、静音与暂停、可拖动悬浮按钮（Ctrl+Alt+W）、诊断输出。
+
+[0.2.0]: https://github.com/Ra-fangtang/dsh-wallpaper-engine/releases/tag/v0.2.0

@@ -86,30 +86,50 @@ dsh-claude-style 走的是“整页换肤”的路子：它不满足于改主题
 
 ## 安装
 
-插件目录：`D:\Plugins\dsh-wallpaper-engine`（按你自己的路径替换即可）
+四种装法，按推荐顺序：
 
-### 推荐：让 dsh 的插件管理器来装
+### ① 插件管理器（DSH 界面里那页）
 
-在 DSH 的插件管理界面里把仓库地址填进去，或者用命令行：
+把下面任意一个 spec 填进插件管理页的安装框：
+
+| spec | 说明 |
+|---|---|
+| `https://github.com/Ra-fangtang/dsh-wallpaper-engine/releases/download/v0.2.0/dsh-wallpaper-engine-0.2.0.tgz` | **发行版附件**，钉死版本、不跑任何构建脚本，最稳（把版本号换成你要的那个） |
+| `github:Ra-fangtang/dsh-wallpaper-engine` | 跟着 `main` 走，pnpm 会 git clone |
+| `dsh-wallpaper-engine` | 如果它已经发布到 npm registry |
+
+命令行等价：
 
 ```bash
-dsh plugin --profile <web|desktop> add link:D:/Plugins/dsh-wallpaper-engine
+dsh plugin --profile <web|desktop> add github:Ra-fangtang/dsh-wallpaper-engine
 ```
 
 > 桌面端 profile 由 Electron 应用独占管理（`dsh plugin --profile desktop` 会被拒绝），
-> 桌面端只能按下面「手动挂载」那两步行事。
+> 桌面端请走 ②。
 
-### 手动挂载
+### ② 从源码目录装（开发时最顺手）
+
+```bash
+dsh plugin --profile <web> add link:<你 clone 下来的插件目录>
+```
+
+### ③ 手动挂载
 
 在 `%USERPROFILE%\.dsh\profiles\<profile>\` 下改两处、建一个 junction：
 
 1. `package.json`
-   - `dependencies` 加 `"dsh-wallpaper-engine": "link:D:/Plugins/dsh-wallpaper-engine"`
-     （想跟 GitHub 上游走就写 `"Ra-fangtang/dsh-wallpaper-engine"` 或 `github:Ra-fangtang/dsh-wallpaper-engine`）
+   - `dependencies` 加 `"dsh-wallpaper-engine": "link:<插件目录的绝对路径>"`
+     （跟 GitHub 上游走就写 `github:Ra-fangtang/dsh-wallpaper-engine`）
    - `dsh.profile.bundles` 加 `"dsh-wallpaper-engine"`
 2. `node_modules\dsh-wallpaper-engine` → 指向插件目录的 junction：
 
-       cmd /c mklink /J "%USERPROFILE%\.dsh\profiles\<profile>\node_modules\dsh-wallpaper-engine" "D:\Plugins\dsh-wallpaper-engine"
+       cmd /c mklink /J "%USERPROFILE%\.dsh\profiles\<profile>\node_modules\dsh-wallpaper-engine" "<插件目录的绝对路径>"
+
+### ④ 从 Git 历史里装出来的坑
+
+从 git/github spec 安装时，pnpm 会把这个包当“需要构建”的包，拦下它的生命周期脚本要你授权
+（`pendingBuilds` / `allowBuilds`）。**本插件没有任何依赖与构建步骤**，所以仓库里刻意不声明
+`prepare` 脚本；如果你的 pnpm 仍然弹出授权请求，直接选“不允许”即可 —— 它不构建也能跑。
 
 ### ⚠️ 装完必须重启一次 DSH
 

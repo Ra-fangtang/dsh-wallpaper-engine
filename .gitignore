@@ -24,3 +24,6 @@ desktop.ini
 # 鏃ュ織
 *.log
 npm-debug.log*
+
+# 发版打包产物
+dist/

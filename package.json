@@ -39,5 +39,10 @@
     "url": "https://github.com/Ra-fangtang/dsh-wallpaper-engine/issues"
   },
   "author": "Ra-fangtang",
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "verify": "node scripts/verify.mjs",
+    "release:check": "node scripts/verify.mjs --pack",
+    "release": "node scripts/verify.mjs --pack --tag"
+  }
 }

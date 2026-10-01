@@ -1,0 +1,26 @@
+# 依赖与构建产物
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+*.tgz
+
+# 编辑器的本地设置
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+
+# 系统垃圾
+Thumbs.db
+Desktop.ini
+.DS_Store
+desktop.ini
+
+# 运行时配置（插件的私有不落库，配置在 $DSH_HOME/.dsh-wallpaper.json）
+.dsh-wallpaper.json
+*.local.json
+
+# 日志
+*.log
+npm-debug.log*
